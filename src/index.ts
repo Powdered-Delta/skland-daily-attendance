@@ -42,28 +42,28 @@ export async function doAttendance(accounts: string[], options: Options) {
 }
 
 /** 将生成push方法的方法拆分出来 */
-const sendMessage = (message: string, options: Options) => {
+const sendMessage = async (message: string, options: Options) => {
+  console.log(message);
+
   let hasError = false;
-  const push = async () => {
-    if (options.withServerChan) {
-      await serverChan(options.withServerChan, `【森空岛每日签到】`, message);
-    }
-    if (options.withBark) {
-      await bark(options.withBark, `【森空岛每日签到】`, message);
-    }
-    if (options.withMessagePusher) {
-      await messagePusher(
-        options.withMessagePusher,
-        `【森空岛每日签到】`,
-        message
-      );
-    }
+  if (options.withServerChan) {
+    await serverChan(options.withServerChan, `【森空岛每日签到】`, message);
+  }
+  if (options.withBark) {
+    await bark(options.withBark, `【森空岛每日签到】`, message);
+  }
+  if (options.withMessagePusher) {
+    await messagePusher(
+      options.withMessagePusher,
+      `【森空岛每日签到】`,
+      message
+    );
     // quit with error
     if (hasError) {
       console.error("[ServerChan] Send message to ServerChan failed.");
       process.exit(1);
     }
-  };
+  }
 };
 /**
  * 以账号为单位进行签到，并返回该账号下所有角色的 签到log
