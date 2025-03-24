@@ -20,6 +20,7 @@ export async function doAttendance(accounts: string[], options: Options) {
   const logMsgList: string[] = [];
   let logMsg = "";
   // 循环账号列表进行签到
+  console.log("开始签到流程");
   for (const account of accounts) {
     const logList = await doAttendanceForAccount(account);
     logList.forEach((log) => {
@@ -43,7 +44,7 @@ export async function doAttendance(accounts: string[], options: Options) {
 
 /** 将生成push方法的方法拆分出来 */
 const sendMessage = async (message: string, options: Options) => {
-  console.log(message);
+  console.log("attandance log message:\n", message);
 
   let hasError = false;
   if (options.withServerChan) {
@@ -156,7 +157,7 @@ export async function doAttendanceForAccount(
               currentAttendance + 1
             } 签到过程中出现未知错误: ${error.message}`);
             logItem.status = AttendanceStatus.UNKNOWN;
-            console.error("发生未知错误，工作流终止。");
+            console.error("发生未知错误。");
             retries++; // 增加重试计数器
             // 跳过当前账号，进行下一个账号的签到
             if (retries >= maxRetries) {
@@ -168,6 +169,7 @@ export async function doAttendanceForAccount(
         // 多个角色之间的延时
         await setTimeout(3000 + Math.random() * 2000);
       }
+      console.log("签到结果：\n" + logItem.message);
       // push 每个角色的 logItem
       logItemList.push(logItem);
     })
