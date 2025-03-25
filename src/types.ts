@@ -1,70 +1,74 @@
 export interface SklandResponse<T> {
-  code: number
-  message: string
-  data: T
+  code: number;
+  message: string;
+  data: T;
 }
 
 export interface AuthResponse {
-  status: number
-  type: string
-  msg: string
-  data?: { code: string, uid: string }
+  status: number;
+  type: string;
+  msg: string;
+  data?: { code: string; uid: string };
 }
 
-export type CredResponse = SklandResponse<{ cred: string, userId: string, token: string }>
+export type CredResponse = SklandResponse<{
+  cred: string;
+  userId: string;
+  token: string;
+}>;
 
 export type BindingResponse = SklandResponse<{
   list: {
-    appCode: string
-    appName: string
+    appCode: string;
+    appName: string;
     bindingList: {
-      uid: string
-      isOfficial: boolean
-      isDefault: boolean
-      channelMasterId: string
-      channelName: string
-      nickName: string
-      isDelete: boolean
-    }[]
-    defaultUid: string
-  }[]
-}>
+      uid: string;
+      isOfficial: boolean;
+      isDefault: boolean;
+      channelMasterId: string;
+      channelName: string;
+      nickName: string;
+      isDelete: boolean;
+    }[];
+    defaultUid: string;
+  }[];
+}>;
 
 export type GetAttendanceResponse = SklandResponse<{
-  currentTs: string
+  currentTs: string;
   calendar: {
-    resourceId: string
-    type: string
-    count: number
-    available: boolean
-    done: boolean
-  }[]
+    resourceId: string;
+    type: string;
+    count: number;
+    available: boolean;
+    done: boolean;
+  }[];
   records: {
-    resourceId: string
-    type: string
-    count: number
-    ts: string
-  }[]
+    resourceId: string;
+    type: string;
+    count: number;
+    ts: string;
+  }[];
   resourceInfoMap: {
     [key: string]: {
-      id: string
-      name: string
-      type: string
-    }
-  }
-}>
+      id: string;
+      name: string;
+      type: string;
+    };
+  };
+}>;
 
 export type AttendanceResponse = SklandResponse<{
-  ts: number
+  ts: number;
   awards: {
     resource: {
-      id: string
-      name: string
-      type: string
-    }
-    count: number
-  }[]
-}>
+      id: string;
+      name: string;
+      type: string;
+    };
+    count: number;
+  }[];
+}>;
 
 /** 森空岛版面id */
 export enum SklandBoard {
@@ -80,4 +84,19 @@ export enum SklandBoard {
   Neste = 100,
   /** 开拓芯 */
   Coreblazer = 101,
+}
+
+/** 签到回报状态码 */
+export enum AttendanceStatus {
+  FAIL = 0,
+  SUCCESS = 1,
+  ALREADY_SIGNED = 2,
+  TOKEN_EXPIRED = 3,
+  GET_USER_INFO_FAIL = 4,
+  UNKNOWN = 99,
+}
+
+export interface AttendanceLogItem {
+  status?: AttendanceStatus;
+  message?: string;
 }
