@@ -109,7 +109,7 @@ export async function doAttendanceForAccount(
                 `${
                   Number(character.channelMasterId) - 1 ? "B 服" : "官服"
                 }角色 ${
-                  currentAttendance + 1
+                  character.nickName
                 } 签到成功${`, 获得了${data.data.awards
                   .map((a) => `「${a.resource.name}」${a.count}个`)
                   .join(",")}`}`
@@ -123,7 +123,7 @@ export async function doAttendanceForAccount(
               logItem.message = logItem.message?.concat(
                 `${
                   Number(character.channelMasterId) - 1 ? "B 服" : "官服"
-                }角色 ${currentAttendance + 1} 第 ${
+                }角色 ${character.nickName} 第 ${
                   retries + 1
                 } 次签到失败, 错误消息: ${
                   data.message
@@ -135,7 +135,7 @@ export async function doAttendanceForAccount(
           } else {
             logItem.message = logItem.message!.concat(
               `${Number(character.channelMasterId) - 1 ? "B 服" : "官服"}角色 ${
-                currentAttendance + 1
+                character.nickName
               } 今天已经签到过了`
             );
             logItem.status = AttendanceStatus.ALREADY_SIGNED;
@@ -147,14 +147,14 @@ export async function doAttendanceForAccount(
               status: AttendanceStatus.ALREADY_SIGNED,
               message: `${
                 Number(character.channelMasterId) - 1 ? "B 服" : "官服"
-              }角色 ${currentAttendance + 1} 今天已经签到过了`,
+              }角色 ${character.nickName} 今天已经签到过了`,
             });
 
             break; // 已经签到过，跳出重试循环
           } else {
             logItem.message = logItem.message!.concat(`
               ${Number(character.channelMasterId) - 1 ? "B 服" : "官服"}角色 ${
-              currentAttendance + 1
+              character.nickName
             } 签到过程中出现未知错误: ${error.message}`);
             logItem.status = AttendanceStatus.UNKNOWN;
             console.error("发生未知错误。");
