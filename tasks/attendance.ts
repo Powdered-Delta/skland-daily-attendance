@@ -16,6 +16,65 @@ interface GameStats {
   failed: number // 签到失败
 }
 
+type AccountStatus = 'success' | 'skipped' | 'failed'
+
+interface AccountGameStats {
+  shortName: string
+  succeeded: number
+  alreadyAttended: number
+  failed: number
+}
+
+interface AccountResult {
+  index: number
+  status: AccountStatus
+  succeeded: number
+  alreadyAttended: number
+  failed: number
+  byGame: Map<number, AccountGameStats>
+  errorMessage?: string
+}
+
+const GAME_SHORT_NAMES: Record<number, string> = {
+  1: '舟',
+  3: '终',
+}
+
+function gameShortName(gameId: number, gameName: string): string {
+  return GAME_SHORT_NAMES[gameId] ?? (gameName.replace(/明日方舟[：:]?/, '').slice(0, 2) || '游')
+}
+
+function getOrCreateAccountGameStats(
+  accountResult: AccountResult,
+  gameId: number,
+  gameName: string,
+): AccountGameStats {
+  let stats = accountResult.byGame.get(gameId)
+  if (!stats) {
+    stats = { shortName: gameShortName(gameId, gameName), succeeded: 0, alreadyAttended: 0, failed: 0 }
+    accountResult.byGame.set(gameId, stats)
+  }
+  return stats
+}
+
+function formatAccountGamePart(stats: AccountGameStats): string {
+  const parts: string[] = []
+  if (stats.succeeded > 0)
+    parts.push(`新签${stats.succeeded}`)
+  if (stats.alreadyAttended > 0)
+    parts.push(`已签${stats.alreadyAttended}`)
+  if (stats.failed > 0)
+    parts.push(`失败${stats.failed}`)
+  return parts.length > 0 ? `${stats.shortName}${parts.join('')}` : ''
+}
+
+function formatAccountGameSummary(accountResult: AccountResult): string {
+  const parts = [...accountResult.byGame.values()]
+    .map(formatAccountGamePart)
+    .filter(Boolean)
+  return parts.join(' ')
+}
+
 interface ExecutionStats {
   accounts: {
     total: number
@@ -25,11 +84,13 @@ interface ExecutionStats {
     failedIndexes: number[]
   }
   charactersByGame: Map<number, GameStats> // key: gameId
+  accountResults: AccountResult[]
 }
 
 interface ProcessAccountResult {
   accountHasError: boolean
   charactersCount: number
+  accountResult: AccountResult
 }
 
 interface AttendanceContext {
@@ -51,25 +112,81 @@ const useAttendanceContext = attendanceContext.use
 
 const ATTENDANCE_AVAILABLE_APPCODE = ['arknights', 'endfield']
 
+function createAccountResult(index: number, status: AccountStatus): AccountResult {
+  return { index, status, succeeded: 0, alreadyAttended: 0, failed: 0, byGame: new Map() }
+}
+
+const PUSH_ERROR_MAX_LEN = 36
+
+function truncateForPush(message: string, maxLen = PUSH_ERROR_MAX_LEN): string {
+  const oneLine = message.replace(/\s+/g, ' ').trim()
+  return oneLine.length <= maxLen ? oneLine : `${oneLine.slice(0, maxLen - 1)}…`
+}
+
+function formatAccountLine(result: AccountResult): string {
+  switch (result.status) {
+    case 'skipped':
+      return `#${result.index} - 已跳过`
+    case 'failed': {
+      const hint = `请更新第${result.index}个token`
+      const gameSummary = formatAccountGameSummary(result)
+      if (result.errorMessage)
+        return `#${result.index} ✗ ${truncateForPush(result.errorMessage)}${gameSummary ? ` ${gameSummary}` : ''} (${hint})`
+      return `#${result.index} ✗ ${gameSummary || '失败'} (${hint})`
+    }
+    default: {
+      const gameSummary = formatAccountGameSummary(result)
+      return `#${result.index} ✓ ${gameSummary || '完成'}`
+    }
+  }
+}
+
+function buildPushContent(stats: ExecutionStats): string {
+  const { accounts } = stats
+  const lines = [
+    `汇总: ${accounts.successful}成功 ${accounts.skipped}跳过 ${accounts.failed}失败 / 共${accounts.total}账号`,
+  ]
+
+  for (const result of stats.accountResults)
+    lines.push(formatAccountLine(result))
+
+  if (stats.charactersByGame.size > 0) {
+    const gameLine = [...stats.charactersByGame.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([gameId, g]) => {
+        const short = gameShortName(gameId, g.gameName)
+        return `${short} 新签${g.succeeded}/已签${g.alreadyAttended}/失败${g.failed}`
+      })
+      .join(' | ')
+    lines.push(`游戏: ${gameLine}`)
+  }
+
+  return lines.join('\n')
+}
+
 async function processAccount(
   token: string,
   accountNumber: number,
 ): Promise<ProcessAccountResult> {
   // Get all dependencies from context
   const { stats, messageCollector, storage, maxRetries, totalAccounts } = useAttendanceContext()
+  const accountResult = createAccountResult(accountNumber, 'success')
+
   // Check if already attended today
   const attendanceKey = await generateAttendanceKey(token)
   const hasAttended = await storage.getItem(attendanceKey)
 
   if (hasAttended) {
-    messageCollector.notify(`\n--- 账号 ${accountNumber}/${totalAccounts} ---`)
-    messageCollector.info(`今天已经签到过，跳过`)
+    messageCollector.log(`--- 账号 ${accountNumber}/${totalAccounts} ---`)
+    messageCollector.log(`今天已经签到过，跳过`)
     stats.accounts.skipped++
-    return { accountHasError: false, charactersCount: 0 }
+    accountResult.status = 'skipped'
+    stats.accountResults.push(accountResult)
+    return { accountHasError: false, charactersCount: 0, accountResult }
   }
 
-  messageCollector.notify(`\n--- 账号 ${accountNumber}/${totalAccounts} ---`)
-  messageCollector.info(`开始处理...`)
+  messageCollector.log(`--- 账号 ${accountNumber}/${totalAccounts} ---`)
+  messageCollector.log(`开始处理...`)
 
   const client = createClient()
   const { code } = await client.collections.hypergryph.grantAuthorizeCode(token)
@@ -106,6 +223,7 @@ async function processAccount(
 
     const gameStats = stats.charactersByGame.get(character.gameId)!
     gameStats.total++
+    const accountGameStats = getOrCreateAccountGameStats(accountResult, character.gameId, character.gameName)
 
     const result = await attendCharacter(
       client,
@@ -117,18 +235,24 @@ async function processAccount(
 
     // Collect message to notification
     if (result.hasError) {
-      messageCollector.infoError(result.message)
+      messageCollector.error(result.message)
       gameStats.failed++
+      accountGameStats.failed++
+      accountResult.failed++
       accountHasError = true
     }
     else {
-      messageCollector.info(result.message)
+      messageCollector.log(result.message)
       if (result.success) {
         gameStats.succeeded++
+        accountGameStats.succeeded++
+        accountResult.succeeded++
       }
       else {
         // Already attended today
         gameStats.alreadyAttended++
+        accountGameStats.alreadyAttended++
+        accountResult.alreadyAttended++
       }
     }
   }
@@ -137,13 +261,16 @@ async function processAccount(
   if (!accountHasError) {
     await storage.setItem(attendanceKey, true)
     stats.accounts.successful++
+    accountResult.status = 'success'
   }
   else {
     stats.accounts.failed++
     stats.accounts.failedIndexes.push(accountNumber)
+    accountResult.status = 'failed'
   }
 
-  return { accountHasError, charactersCount: characterList.length }
+  stats.accountResults.push(accountResult)
+  return { accountHasError, charactersCount: characterList.length, accountResult }
 }
 
 export default defineTask<'success' | 'failed'>({
@@ -169,8 +296,6 @@ export default defineTask<'success' | 'failed'>({
 
     const storage = useStorage()
 
-    messageCollector.notify('## 森空岛每日签到')
-
     const maxRetries = Number(config.maxRetries)
 
     // Initialize statistics
@@ -183,9 +308,8 @@ export default defineTask<'success' | 'failed'>({
         failedIndexes: [],
       },
       charactersByGame: new Map(),
+      accountResults: [],
     }
-
-    let hasFailed = false
 
     const ctx = {
       stats,
@@ -202,50 +326,52 @@ export default defineTask<'success' | 'failed'>({
         const accountNumber = index + 1
 
         try {
-          const result = await processAccount(token, accountNumber)
-
-          if (result.accountHasError) {
-            hasFailed = true
-          }
+          await processAccount(token, accountNumber)
         }
         catch (error) {
           const { stats, messageCollector } = useAttendanceContext()
           const errorMessage = error instanceof Error ? error.message : String(error)
-          messageCollector.notify(`\n--- 账号 ${accountNumber}/${tokens.length} ---`)
-          messageCollector.infoError(`处理失败: ${errorMessage}`)
-          hasFailed = true
+          messageCollector.log(`--- 账号 ${accountNumber}/${tokens.length} ---`)
+          messageCollector.error(`处理失败: ${errorMessage}`)
           stats.accounts.failed++
           stats.accounts.failedIndexes.push(accountNumber)
+          const accountResult: AccountResult = {
+            index: accountNumber,
+            status: 'failed',
+            succeeded: 0,
+            alreadyAttended: 0,
+            failed: 0,
+            byGame: new Map(),
+            errorMessage: `处理失败: ${errorMessage}`,
+          }
+          stats.accountResults.push(accountResult)
         }
       }
     })
 
-    // Output execution summary
-    messageCollector.notify(`\n========== 执行摘要 ==========`)
-    messageCollector.notify(`账号统计:`)
-    messageCollector.notify(`  • 总数: ${stats.accounts.total}`)
-    messageCollector.notify(`  • 成功: ${stats.accounts.successful}`)
-    messageCollector.notify(`  • 跳过: ${stats.accounts.skipped}`)
-    if (stats.accounts.failed > 0) {
-      messageCollector.notifyError(`  • 失败: ${stats.accounts.failed} (账号 #${stats.accounts.failedIndexes.join(', #')})`)
+    // 控制台输出完整摘要
+    messageCollector.log(`\n========== 执行摘要 ==========`)
+    messageCollector.log(`账号: ${stats.accounts.successful}成功 ${stats.accounts.skipped}跳过 ${stats.accounts.failed}失败 / 共${stats.accounts.total}`)
+    for (const result of stats.accountResults)
+      messageCollector.log(formatAccountLine(result))
+    for (const [gameId, gameStats] of [...stats.charactersByGame.entries()].sort(([a], [b]) => a - b)) {
+      const short = gameShortName(gameId, gameStats.gameName)
+      messageCollector.log(
+        `【${short}/${gameStats.gameName}】新签${gameStats.succeeded} 已签${gameStats.alreadyAttended} 失败${gameStats.failed} / 总${gameStats.total}`,
+      )
     }
 
-    // Output game-specific statistics
-    if (stats.charactersByGame.size > 0) {
-      for (const gameStats of stats.charactersByGame.values()) {
-        messageCollector.notify(`\n【${gameStats.gameName}】角色统计:`)
-        messageCollector.notify(`  • 总数: ${gameStats.total}`)
-        messageCollector.notify(`  • 本次签到成功: ${gameStats.succeeded}`)
-        messageCollector.notify(`  • 今天已签到: ${gameStats.alreadyAttended}`)
-        if (gameStats.failed > 0) {
-          messageCollector.notifyError(`  • 签到失败: ${gameStats.failed}`)
-        }
-      }
-    }
-
-    if (stats.accounts.successful > 0 || stats.accounts.failed > 0)
+    // 推送仅发送一条短摘要（适配 ServerChan 长度限制）
+    if (stats.accounts.successful > 0 || stats.accounts.failed > 0 || stats.accounts.skipped > 0) {
+      const hasFailedAccount = stats.accounts.failed > 0
+      if (hasFailedAccount)
+        messageCollector.notifyError(buildPushContent(stats))
+      else
+        messageCollector.notify(buildPushContent(stats))
       await messageCollector.push()
+    }
 
-    return { result: hasFailed ? 'failed' : 'success' }
+    // 签到业务失败（部分账号/角色）不标记任务失败；仅未捕获的系统级异常会向外抛出
+    return { result: 'success' }
   },
 })
