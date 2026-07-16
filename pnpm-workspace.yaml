@@ -1,3 +1,8 @@
+minimumReleaseAgeExclude:
+  - '@types/node@25.9.0'
+  - date-fns@4.2.1
+  - mima-kit@0.1.2
+  - skland-kit@0.3.5
 shellEmulator: true
 
 trustPolicy: no-downgrade
@@ -13,19 +18,19 @@ catalogs:
     '@antfu/eslint-config': ^9.0.0
     eslint: ^10.4.0
     nitro: 3.0.1-alpha.2
-    typescript: ^5.9.3
+    typescript: ^6.0.3
     wait-on: ^9.0.10
     wrangler: ^4.92.0
   lib:
     '@upstash/redis': ^1.38.0
     aws4fetch: ^1.0.20
     ioredis: ^5.10.1
-    skland-kit: ^0.3.4
+    skland-kit: ^0.3.5
     statocysts: ^0.11.1
     unctx: ^2.5.0
     unstorage: ^2.0.0-alpha.7
   types:
-    '@types/node': ^25.8.0
+    '@types/node': ^25.9.0
 allowBuilds:
   esbuild: true
   sharp: true
